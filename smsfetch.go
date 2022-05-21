@@ -52,7 +52,7 @@ func processIncoming(_ http.ResponseWriter, r *http.Request) {
 	body := strings.TrimSpace(rawBody)
 
 	if len(body) < 3 || len(body) > 4 || !isAllLettersAndNumbers(body) {
-		log.Println(fmt.Sprintf("Incoming body not four chars or not all letters, probably not an airport: %v", body))
+		log.Println(fmt.Sprintf("Incoming body has invalid length or contents, probably not an airport: %v", body))
 		return
 	}
 
@@ -74,20 +74,22 @@ func handleMetar(from string, icao string) {
 		return
 	}
 
-	if len(metar.Error) > 0 && len(icao) != 3 {
-		log.Println(fmt.Sprintf("Error in metar for %v: %v", icao, metar.Error))
-		return
-	}
-
-	// try again by prepending a "K"
-	metar, fail = fetchMetar("K" + icao)
-	if fail {
-		return
-	}
-
 	if len(metar.Error) > 0 {
-		log.Println(fmt.Sprintf("Error in metar for %v: %v", icao, metar.Error))
-		return
+		if len(icao) != 3 {
+			log.Println(fmt.Sprintf("Error in metar for %v: %v", icao, metar.Error))
+			return
+		}
+
+		// try again by prepending a "K"
+		metar, fail = fetchMetar("K" + icao)
+		if fail {
+			return
+		}
+
+		if len(metar.Error) > 0 {
+			log.Println(fmt.Sprintf("Error in metar for %v: %v", icao, metar.Error))
+			return
+		}
 	}
 
 	fmt.Println(metar.Sanitized)
