@@ -15,6 +15,7 @@ import (
 )
 
 type Metar struct {
+	Error     string `json:"error"`
 	Sanitized string `json:"sanitized"`
 }
 
@@ -68,6 +69,33 @@ func isAllLettersAndNumbers(s string) bool {
 }
 
 func handleMetar(from string, icao string) {
+	metar, fail := fetchMetar(icao)
+	if fail {
+		return
+	}
+
+	if len(metar.Error) > 0 && len(icao) != 3 {
+		log.Println(fmt.Sprintf("Error in metar for %v: %v", icao, metar.Error))
+		return
+	}
+
+	// try again by prepending a "K"
+	metar, fail = fetchMetar("K" + icao)
+	if fail {
+		return
+	}
+
+	if len(metar.Error) > 0 {
+		log.Println(fmt.Sprintf("Error in metar for %v: %v", icao, metar.Error))
+		return
+	}
+
+	fmt.Println(metar.Sanitized)
+
+	sendMessage(twilioClient, metar.Sanitized, sender, from)
+}
+
+func fetchMetar(icao string) (*Metar, bool) {
 	client := &http.Client{}
 
 	req, err := http.NewRequest("GET", fmt.Sprintf("https://avwx.rest/api/metar/%v?options=&airport=true&reporting=true&format=json&remove=&filter=sanitized&onfail=cache", icao), nil)
@@ -77,7 +105,7 @@ func handleMetar(from string, icao string) {
 
 	if err != nil {
 		log.Println(err)
-		return
+		return nil, true
 	}
 
 	defer func(Body io.ReadCloser) {
@@ -88,7 +116,7 @@ func handleMetar(from string, icao string) {
 
 	if err != nil {
 		log.Println(err)
-		return
+		return nil, true
 	}
 
 	metar := &Metar{}
@@ -97,12 +125,9 @@ func handleMetar(from string, icao string) {
 
 	if err != nil {
 		log.Println(err)
-		return
+		return nil, true
 	}
-
-	fmt.Println(metar.Sanitized)
-
-	sendMessage(twilioClient, metar.Sanitized, sender, from)
+	return metar, false
 }
 
 func sendMessage(client *twilio.RestClient, message string, from string, to string) {
