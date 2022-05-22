@@ -83,7 +83,7 @@ func (c *context) handleTaf(code string) (*taf, error) {
 func fetchMetar(icao string) (*metar, bool) {
 	client := &http.Client{}
 
-	req, err := http.NewRequest("GET", fmt.Sprintf("https://avwx.rest/api/metar/%v?options=&airport=true&reporting=true&format=json&remove=&filter=sanitized&onfail=cache", icao), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("https://avwx.rest/api/metar/%v?options=&airport=true&reporting=true&format=json&remove=&filter=sanitized&onfail=nearest", icao), nil)
 
 	req.Header.Add("Authorization", avwxToken)
 	resp, err := client.Do(req)
@@ -118,7 +118,7 @@ func fetchMetar(icao string) (*metar, bool) {
 func fetchTaf(code string) (*taf, bool) {
 	client := &http.Client{}
 
-	req, err := http.NewRequest("GET", fmt.Sprintf("https://avwx.rest/api/taf/%v?options=&airport=true&reporting=true&format=json&remove=&filter=raw&onfail=cache", code), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("https://avwx.rest/api/taf/%v?options=&airport=true&reporting=true&format=json&remove=&filter=raw&onfail=nearest", code), nil)
 
 	req.Header.Add("Authorization", avwxToken)
 	resp, err := client.Do(req)
