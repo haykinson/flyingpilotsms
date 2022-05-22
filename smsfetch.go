@@ -59,6 +59,8 @@ func processIncoming(_ http.ResponseWriter, r *http.Request) {
 
 	body := strings.TrimSpace(rawBody)
 
+	log.Println(fmt.Sprintf("Incoming message: %v", body))
+
 	if !onlyValidChars(body) {
 		log.Println(fmt.Sprintf("Incoming body has invalid chars: %v", body))
 		return
