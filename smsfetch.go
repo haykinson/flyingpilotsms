@@ -1,12 +1,9 @@
 package main
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/twilio/twilio-go"
-	openapi "github.com/twilio/twilio-go/rest/api/v2010"
-	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -14,9 +11,20 @@ import (
 	"unicode"
 )
 
-type Metar struct {
+type metar struct {
 	Error     string `json:"error"`
 	Sanitized string `json:"sanitized"`
+}
+
+type taf struct {
+	Error string `json:"error"`
+	Raw   string `json:"raw"`
+}
+
+type command struct {
+	code     string
+	getMetar bool
+	getTaf   bool
 }
 
 var avwxToken = os.Getenv("AVWX_TOKEN")
@@ -51,99 +59,109 @@ func processIncoming(_ http.ResponseWriter, r *http.Request) {
 
 	body := strings.TrimSpace(rawBody)
 
-	if len(body) < 3 || len(body) > 4 || !isAllLettersAndNumbers(body) {
-		log.Println(fmt.Sprintf("Incoming body has invalid length or contents, probably not an airport: %v", body))
+	if !onlyValidChars(body) {
+		log.Println(fmt.Sprintf("Incoming body has invalid chars: %v", body))
 		return
 	}
 
-	go handleMetar(from, body)
+	ctx := &context{twilioClient: twilioClient, sender: sender, destination: from}
+	go handleMessage(ctx, body)
 }
 
-func isAllLettersAndNumbers(s string) bool {
+func onlyValidChars(s string) bool {
 	for _, r := range s {
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && !unicode.IsSpace(r) {
 			return false
 		}
 	}
 	return true
 }
 
-func handleMetar(from string, icao string) {
-	metar, fail := fetchMetar(icao)
-	if fail {
+func handleMessage(w weatherHandler, message string) {
+	command, err := getCommandFromMessage(message)
+	if err != nil {
+		log.Println(fmt.Sprintf("Problem parsing message: %v", err))
 		return
 	}
 
-	if len(metar.Error) > 0 {
-		if len(icao) != 3 {
-			log.Println(fmt.Sprintf("Error in metar for %v: %v", icao, metar.Error))
-			return
-		}
+	var metar *metar
+	var taf *taf
 
-		// try again by prepending a "K"
-		metar, fail = fetchMetar("K" + icao)
-		if fail {
-			return
-		}
-
-		if len(metar.Error) > 0 {
-			log.Println(fmt.Sprintf("Error in metar for %v: %v", icao, metar.Error))
-			return
+	if command.getMetar {
+		metar, err = w.handleMetar(command.code)
+		if err != nil {
+			log.Println("Asked to get metar, but couldn't get it")
+		} else {
+			fmt.Println(metar.Sanitized)
 		}
 	}
 
-	fmt.Println(metar.Sanitized)
+	if command.getTaf {
+		taf, err = w.handleTaf(command.code)
+		if err != nil {
+			log.Println("Asked to get taf, but couldn't get it")
+		} else {
+			fmt.Println(taf.Raw)
+		}
+	}
 
-	sendMessage(twilioClient, metar.Sanitized, sender, from)
+	if taf == nil && metar == nil {
+		return
+	}
+
+	response := ""
+
+	if metar != nil {
+		response += metar.Sanitized
+	}
+
+	if taf != nil {
+		if len(response) > 0 {
+			response += "\n"
+		}
+		response += taf.Raw
+	}
+
+	w.sendMessage(response)
 }
 
-func fetchMetar(icao string) (*Metar, bool) {
-	client := &http.Client{}
+func getCommandFromMessage(message string) (*command, error) {
+	normalizedMessage := strings.ToUpper(strings.TrimSpace(message))
 
-	req, err := http.NewRequest("GET", fmt.Sprintf("https://avwx.rest/api/metar/%v?options=&airport=true&reporting=true&format=json&remove=&filter=sanitized&onfail=cache", icao), nil)
-
-	req.Header.Add("Authorization", avwxToken)
-	resp, err := client.Do(req)
-
-	if err != nil {
-		log.Println(err)
-		return nil, true
+	if len(normalizedMessage) < 3 {
+		return nil, errors.New("not enough text in command")
 	}
 
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
+	segments := strings.Split(normalizedMessage, " ")
+	removeEmpty(&segments)
 
-	body, err := ioutil.ReadAll(resp.Body)
-
-	if err != nil {
-		log.Println(err)
-		return nil, true
+	var r command
+	for _, item := range segments {
+		switch strings.ToUpper(item) {
+		case "METAR":
+			r.getMetar = true
+		case "TAF":
+			r.getTaf = true
+		default:
+			r.code = item
+		}
 	}
 
-	metar := &Metar{}
-
-	err = json.Unmarshal(body, &metar)
-
-	if err != nil {
-		log.Println(err)
-		return nil, true
+	if !r.getMetar && !r.getTaf {
+		r.getMetar = true
+		r.getTaf = true
 	}
-	return metar, false
+
+	return &r, nil
 }
 
-func sendMessage(client *twilio.RestClient, message string, from string, to string) {
-	params := &openapi.CreateMessageParams{}
-	params.SetTo(to)
-	params.SetFrom(from)
-	params.SetBody(message)
-
-	resp, err := client.Api.CreateMessage(params)
-	if err != nil {
-		fmt.Println(err.Error())
-	} else {
-		response, _ := json.Marshal(*resp)
-		fmt.Println("Response: " + string(response))
+func removeEmpty(segments *[]string) {
+	var result []string
+	for _, item := range *segments {
+		trimmed := strings.TrimSpace(item)
+		if len(trimmed) > 0 {
+			result = append(result, item)
+		}
 	}
-
+	*segments = result
 }
