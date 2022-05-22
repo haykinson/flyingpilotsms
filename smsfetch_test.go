@@ -108,10 +108,10 @@ func Test_handleMessage(t *testing.T) {
 		{"failed metar and taf", &testContext{t, nil, nil, false, ""}, "test", false, ""},
 		{"got metar failed taf", &testContext{t, stdMetar, nil, true, ""}, "test", true, "metarcontents"},
 		{"got taf failed metar", &testContext{t, nil, stdTaf, true, ""}, "test", true, "tafcontents"},
-		{"got metar and taf", stdContext, "test", true, "metarcontents\ntafcontents"},
+		{"got metar and taf", stdContext, "test", true, "metarcontents\n\ntafcontents"},
 		{"asked for metar", stdContext, "test metar", true, "metarcontents"},
 		{"asked for taf", stdContext, "test taf", true, "tafcontents"},
-		{"asked for both", stdContext, "test taf metar", true, "metarcontents\ntafcontents"},
+		{"asked for both", stdContext, "test taf metar", true, "metarcontents\n\ntafcontents"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

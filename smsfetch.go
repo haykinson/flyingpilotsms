@@ -117,7 +117,7 @@ func handleMessage(w weatherHandler, message string) {
 
 	if taf != nil {
 		if len(response) > 0 {
-			response += "\n"
+			response += "\n\n"
 		}
 		response += taf.Raw
 	}
